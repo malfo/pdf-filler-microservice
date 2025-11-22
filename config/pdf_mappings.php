@@ -6,7 +6,7 @@ return [
         'template_path' => storage_path('app/pdf_templates/lav.pdf'),
         'fields' => [
             // DATI PERSONALI
-            'nome' => ['x' => 30, 'y' => 63],
+            'nome' => ['x' => 30, 'y' => 64],
             'cognome' => ['x' => 110, 'y' => 57],
             'luogo_nascita' => ['x' => 25, 'y' => 67],
             'data_nascita' => ['x' => 135, 'y' => 67],
