@@ -52,7 +52,9 @@ class PdfController extends Controller
 
         $onlusCode = $request->input('onlus_code');
         $data = $request->input('data');
-
+        // Aggiungi code_membership all'array $data per poterlo stampare sul PDF
+        $data['code_membership'] = $request->input('code_membership');
+        //$data['data_membership'] = date('d/m/Y');
         try {
             // 2. Riempimento del PDF
             $pdfContent = $this->pdfService->fillPdf($onlusCode, $data);

@@ -8,6 +8,28 @@ use setasign\Fpdi\Tcpdf\Fpdi;
 class PdfFillerService
 {
     /**
+     * Aggiunge spaziatura tra i caratteri di una stringa
+     * 
+     * @param string $text Testo originale
+     * @param float $spacing Spaziatura in mm (default 0.5)
+     * @return string Testo con spazi aggiunti
+     */
+    private function addCharSpacing(string $text, float $spacing = 0.5): string
+    {
+        if ($spacing <= 0) {
+            return $text;
+        }
+        
+        // Converte la spaziatura in mm in spazi approssimativi
+        // 1mm ≈ 2.83 punti, quindi per 0.5mm usiamo circa 1-2 spazi
+        $spacesPerChar = max(1, round($spacing * 2));
+        $spaces = str_repeat(' ', $spacesPerChar);
+        
+        // Inserisce spazi tra ogni carattere
+        return implode($spaces, mb_str_split($text));
+    }
+
+    /**
      * Riempie il PDF in base al codice ONLUS e ai dati forniti.
      * Restituisce il contenuto binario del PDF.
      */
@@ -25,6 +47,10 @@ class PdfFillerService
         $sourceFile = $config['template_path'];
         $pageCount = $pdf->setSourceFile($sourceFile);
         
+        // Spaziatura globale tra caratteri per questa ONLUS (in mm)
+        // Se non specificata, usa 0 (nessuna spaziatura)
+        $charSpacing = $config['char_spacing'] ?? 0;
+        
         // --- LOOP SULLE PAGINE ---
         for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
             $templateId = $pdf->importPage($pageNo);
@@ -33,7 +59,6 @@ class PdfFillerService
             $size = $pdf->getTemplateSize($templateId);
             
             // Aggiungi una pagina con le stesse dimensioni del template
-            // $size['width'] e $size['height'] sono in mm
             $pdf->AddPage($size['orientation'] ?? 'P', [$size['width'], $size['height']]);
             
             // Usa il template con le dimensioni originali (senza scalatura)
@@ -42,10 +67,7 @@ class PdfFillerService
             // 3. Imposta Stile Testo
             $pdf->SetFont('Helvetica', '', 12);
             $pdf->SetTextColor(0, 0, 0);
-            // Imposta la spaziatura tra lettere (in unità di misura del PDF, tipicamente mm)
-            // Valore positivo = più spazio, negativo = meno spazio
-            $pdf->SetCharSpacing(1.0); // Esempio: 0.5mm di spaziatura tra ogni lettera
-
+            
             // Disabilita l'auto page break per questa pagina
             $pdf->SetAutoPageBreak(false);
 
@@ -54,8 +76,11 @@ class PdfFillerService
                 
                 // Trattamento per campi testuali
                 if (!isset($coords['type']) && isset($data[$field])) {
+                    // Applica la spaziatura globale dell'ONLUS al testo
+                    $text = $charSpacing > 0 ? $this->addCharSpacing($data[$field], $charSpacing) : $data[$field];
+                    
                     $pdf->SetXY($coords['x'], $coords['y']);
-                    $pdf->Write(0, $data[$field]);
+                    $pdf->Write(0, $text);
                 }
 
                 // Trattamento per Checkbox (scrive una 'X' se il valore è vero/presente)
@@ -63,10 +88,10 @@ class PdfFillerService
                     isset($data[$field]) && (bool)$data[$field] === true) {
                     
                     // Scrive 'X' nel quadratino della checkbox
-                    $pdf->SetFont('ZapfDingbats', '', 10); // Font speciale per simboli (√ o X)
+                    $pdf->SetFont('ZapfDingbats', '', 10);
                     $pdf->SetXY($coords['x'], $coords['y']);
-                    $pdf->Cell(0, 0, '4', 0, 0, 'L'); // '4' in ZapfDingbats è un segno di spunta
-                    $pdf->SetFont('Helvetica', '', 10); // Torna al font normale
+                    $pdf->Cell(0, 0, '4', 0, 0, 'L');
+                    $pdf->SetFont('Helvetica', '', 12); // Torna al font normale
                 }
 
                 // Trattamento per Firma (Immagine Base64)
@@ -74,7 +99,7 @@ class PdfFillerService
                     try {
                         $imgData = $data[$field];
                         
-                        // Rimuovi il prefisso data URI se presente (es: "data:image/png;base64,")
+                        // Rimuovi il prefisso data URI se presente
                         if (strpos($imgData, ',') !== false) {
                             $imgData = substr($imgData, strpos($imgData, ',') + 1);
                         }
@@ -82,19 +107,16 @@ class PdfFillerService
                         // Decodifica il Base64
                         $decodedImage = base64_decode($imgData, true);
                         
-                        // Verifica che la decodifica sia andata a buon fine
                         if ($decodedImage === false) {
                             throw new \Exception("Errore nella decodifica Base64 della firma");
                         }
                         
-                        // Verifica che sia un'immagine valida controllando i primi byte (magic bytes)
                         $imageInfo = @getimagesizefromstring($decodedImage);
                         if ($imageInfo === false) {
                             throw new \Exception("Il dato fornito non è un'immagine valida");
                         }
                         
-                        // Determina il formato dall'immagine
-                        $imageType = $imageInfo[2]; // IMAGETYPE_JPEG, IMAGETYPE_PNG, etc.
+                        $imageType = $imageInfo[2];
                         $format = '';
                         switch ($imageType) {
                             case IMAGETYPE_JPEG:
@@ -110,22 +132,18 @@ class PdfFillerService
                                 throw new \Exception("Formato immagine non supportato. Usa JPEG o PNG");
                         }
                         
-                        // Utilizza Image con un @ per leggere dalla stringa decodificata (stream)
                         $pdf->Image('@' . $decodedImage, 
                             $coords['x'], $coords['y'], 
                             $coords['width'], $coords['height'],
                             $format
                         );
                     } catch (\Exception $e) {
-                        // Log dell'errore e continua senza la firma
                         \Log::error("Errore nell'inserimento della firma: " . $e->getMessage());
-                        // Opzionalmente, puoi lanciare l'eccezione per interrompere il processo
-                        // throw $e;
                     }
                 }
             }
         }
-        // 'S' = Restituisce il PDF come stringa (contenuto binario)
+        
         return $pdf->Output('modulo_compilato.pdf', 'S'); 
     }
 }
