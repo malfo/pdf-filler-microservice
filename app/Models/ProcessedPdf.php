@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class ProcessedPdf extends Model
 {
     protected $fillable = [
-        'code_membership',
+        'membership_code',
         'onlus_code',
         'reference_id',
         'file_path',
